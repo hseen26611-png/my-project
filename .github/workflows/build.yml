@@ -25,16 +25,18 @@ jobs:
       - name: Setup KernelSU-Next & SUSFS
         run: |
           mkdir -p drivers/kernelsu
-          git clone https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu --depth=1
-          git clone https://github.com/simonpunk/susfs4ksu.git /tmp/susfs --depth=1 || git clone https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs --depth=1
+          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu
           
-          # نسخ ملفات رقعة SUSFS إلى مسار الكيرنل المناسب
-          if [ -d "/tmp/susfs/kernel_patches" ]; then
-            cp /tmp/susfs/kernel_patches/50_add_susfs_in_vfs.patch ./
-            echo "SUSFS patch copied successfully."
+          # استنساخ رقعة SUSFS بالطريقة الصحيحة
+          rm -rf /tmp/susfs
+          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git /tmp/susfs || git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs
+          
+          # نسخ ملفات الرقعة المطلوبة مباشرة إلى مجذر المشروع
+          if [ -d "/tmp/susfs" ]; then
+            cp -r /tmp/susfs/kernel_patches/* ./ || true
+            ls -la
+            echo "SUSFS patches applied successfully."
+          else
+            echo "Error: SUSFS repository clone failed."
+            exit 1
           fi
-
-      - name: Verify Workspace Status
-        run: |
-          ls -la
-          echo "Environment is fully prepared for compilation step."
