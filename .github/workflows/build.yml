@@ -1,27 +1,25 @@
-name: CI
+name: Build Kernel GKI 6.1
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
-  build-kernel:
-    name: Build Kernel GKI 6.1
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Build
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Build Action
         uses: dabao1955/kernel_build_action@main
         with:
-          kernel-url: https://android.googlesource.com/kernel/common
-          kernel-branch: common-android14-6.1
-          config: gki_defconfig
-          arch: arm64
-          aosp-clang: true
-          aosp-gcc: true
-          aosp-clang-version: r510928
-          android-version: 15
-          anykernel3: true
-          release: true
-          access-token: ${{ secrets.GITHUB_TOKEN }}
+          kernel_source: 'https://android.googlesource.com/kernel/common'
+          kernel_branch: 'android14-6.1'
+          device_model: 'Tecno Pova 7 5G'
+          aosp_clang: 'true'
+          enable_ksu: 'true'
+          ksu_type: 'ksu-next'
+          ksu_branch: 'main'
+          enable_susfs: 'true'
+          susfs_branch: 'main'
