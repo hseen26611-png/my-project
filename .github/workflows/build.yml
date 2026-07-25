@@ -26,7 +26,5 @@ jobs:
         run: |
           mkdir -p drivers/kernelsu
           git clone https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu --depth=1
-          
-          # جلب رقعة SUSFS وتطبيقها لضمان التخفي التام
-          git clone https://github.com/rifsxd/susfs4ksu.git /tmp/susfs --depth=1
+          git clone https://github.com/simonpunk/susfs4ksu.git /tmp/susfs --depth=1 || git clone https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs --depth=1
           echo "KernelSU-Next and SUSFS components prepared successfully."
