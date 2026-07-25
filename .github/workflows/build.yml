@@ -18,10 +18,6 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+rx ~/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
-          
-          # ضبط إعدادات Git لتجنب مشاكل الصلاحيات
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
 
       - name: Download Kernel Source & Tools
         run: |
@@ -34,8 +30,8 @@ jobs:
         run: |
           cd kernel_workspace/common
           
-          # استنساخ المجلدات بالطريقة الصحيحة والآمنة
-          git clone --depth=1 -b next https://github.com/rifs28/KernelSU-Next.git KernelSU-Next
+          # الحل الجذري: استخدام رابط مباشر بصلاحيات وهمية صامتة لتجنب طلب الـ Username
+          git clone --depth=1 -b next https://x-access-token:ghp_dummy@github.com/rifs28/KernelSU-Next.git KernelSU-Next
           git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
           
           # تطبيق الرقع والتعديلات
