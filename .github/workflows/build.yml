@@ -29,17 +29,13 @@ jobs:
       - name: Integrate KernelSU-Next & SUSFS
         run: |
           cd kernel_workspace/common
-          curl -L https://github.com/rifs28/KernelSU-Next/archive/refs/heads/next.zip -o ksunext.zip
-          unzip -q ksunext.zip
-          mv KernelSU-Next-next KernelSU-Next
-          
-          curl -L https://gitlab.com/simonpang/susfs4ksu/-/archive/gki-android14-6.1/susfs4ksu-gki-android14-6.1.zip -o susfs.zip
-          unzip -q susfs.zip
-          mv susfs4ksu-gki-android14-6.1 susfs4ksu
+          git clone --depth=1 -b next https://github.com/rifs28/KernelSU-Next.git KernelSU-Next
+          git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
           
           cp susfs4ksu/kernel_patches/KernelSU/1001-ksu_susfs_other_hooks_for_ksu_next.patch KernelSU-Next/
           cp susfs4ksu/kernel_patches/fs/susfs.c fs/
           cp susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
+          
           cd KernelSU-Next
           git apply 1001-ksu_susfs_other_hooks_for_ksu_next.patch || true
           cd ..
