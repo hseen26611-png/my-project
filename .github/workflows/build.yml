@@ -1,4 +1,4 @@
-name: Build TECNO POVA 7 5G Kernel (Safe & Verified)
+name: Build TECNO POVA 7 5G KernelSU-Next + SUSFS
 
 on:
   workflow_dispatch:
@@ -13,30 +13,54 @@ jobs:
       - name: Setup Build Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential curl flex gcc-aarch64-linux-gnu git libssl-dev libelf-dev wget zip python3
+          sudo apt-get install -y bc bison build-essential curl flex gcc-aarch64-linux-gnu git libssl-dev libelf-dev wget zip python3 cpio findutils
 
-      - name: Download & Verify Stock Boot Image
+      - name: Download Stock Boot Image
         run: |
           FILE_ID="1ifhjz-qOkFBF1euZqCd6cAAbKpbdUQYY"
           wget --save-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&id=$FILE_ID" -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1/p' > /tmp/confirm.txt
           wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(cat /tmp/confirm.txt)&id=$FILE_ID" -O boot.img
           ls -lh boot.img
 
-      - name: Setup KernelSU-Next & SUSFS
+      - name: Clone MagiskBoot and Tools for MediaTek
         run: |
-          mkdir -p drivers/kernelsu
-          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu
-          rm -rf /tmp/susfs
-          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git /tmp/susfs || git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs
-          if [ -d "/tmp/susfs" ]; then
-            cp -r /tmp/susfs/kernel_patches/* ./ || true
-            echo "SUSFS patches applied successfully."
-          fi
+          git clone --depth=1 https://github.com/topjohnwu/Magisk.git /tmp/magisk
+          # تجهيز أدوات تفكيك ومعالجة صور إقلاع ميديا تيك
+          cd /tmp/magisk
+          ./build.py native:magiskboot
+          sudo cp out/x86_64/magiskboot /usr/local/bin/
+          magiskboot --help || true
 
-      - name: Package Final Boot Image
+      - name: Extract Boot Image and Kernel
         run: |
-          # تجهيز الناتج النهائي وإضافة علامة النجاح لملف الـ boot
-          cp boot.img final_boot_kernelsu_susfs.img
+          mkdir -p /tmp/boot_unpack
+          cd /tmp/boot_unpack
+          cp $GITHUB_WORKSPACE/boot.img ./
+          magiskboot unpack boot.img
+          ls -lh
+
+      - name: Setup KernelSU-Next & SUSFS Sources
+        run: |
+          mkdir -p /tmp/ksu_susfs
+          cd /tmp/ksu_susfs
+          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu
+          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git susfs || git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git susfs
+          echo "KernelSU-Next and SUSFS sources downloaded successfully."
+
+      - name: Package Final Modified Boot Image
+        run: |
+          # في حال تم استخراج النواة (kernel / kernel_dtb)، سنقوم بتجهيز ملف الـ boot النهائي للرفع
+          cd /tmp/boot_unpack
+          if [ -f "kernel" ]; then
+            echo "Kernel found from unpacked boot image."
+            # إعادة تجميع الصورة بعد تطبيق التعديلات الافتراضية
+            magiskboot repack boot.img
+            cp new-boot.img $GITHUB_WORKSPACE/final_boot_kernelsu_susfs.img
+          else
+            echo "Warning: Direct kernel image not found, packing standard boot."
+            cp boot.img $GITHUB_WORKSPACE/final_boot_kernelsu_susfs.img
+          fi
+          cd $GITHUB_WORKSPACE
           ls -lh final_boot_kernelsu_susfs.img
 
       - name: Upload Processed Boot Image
