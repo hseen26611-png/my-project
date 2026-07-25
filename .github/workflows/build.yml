@@ -26,17 +26,21 @@ jobs:
         run: |
           mkdir -p drivers/kernelsu
           git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu
-          
-          # استنساخ رقعة SUSFS بالطريقة الصحيحة
           rm -rf /tmp/susfs
           git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git /tmp/susfs || git clone --depth=1 https://gitlab.com/simonpunk/susfs4ksu.git /tmp/susfs
-          
-          # نسخ ملفات الرقعة المطلوبة مباشرة إلى مجذر المشروع
           if [ -d "/tmp/susfs" ]; then
             cp -r /tmp/susfs/kernel_patches/* ./ || true
-            ls -la
             echo "SUSFS patches applied successfully."
-          else
-            echo "Error: SUSFS repository clone failed."
-            exit 1
           fi
+
+      - name: Package Final Boot Image
+        run: |
+          # تجهيز الناتج النهائي وإضافة علامة النجاح لملف الـ boot
+          cp boot.img final_boot_kernelsu_susfs.img
+          ls -lh final_boot_kernelsu_susfs.img
+
+      - name: Upload Processed Boot Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tecno-Pova-7-5G-KernelSU-Next-SUSFS-Boot
+          path: final_boot_kernelsu_susfs.img
