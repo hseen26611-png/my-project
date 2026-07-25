@@ -25,10 +25,9 @@ jobs:
       - name: Clone MagiskBoot and Tools for MediaTek
         run: |
           git clone --depth=1 https://github.com/topjohnwu/Magisk.git /tmp/magisk
-          # تجهيز أدوات تفكيك ومعالجة صور إقلاع ميديا تيك
           cd /tmp/magisk
-          ./build.py native:magiskboot
-          sudo cp out/x86_64/magiskboot /usr/local/bin/
+          python3 build.py native
+          find out -name "magiskboot" -exec sudo cp {} /usr/local/bin/ \;
           magiskboot --help || true
 
       - name: Extract Boot Image and Kernel
@@ -49,11 +48,9 @@ jobs:
 
       - name: Package Final Modified Boot Image
         run: |
-          # في حال تم استخراج النواة (kernel / kernel_dtb)، سنقوم بتجهيز ملف الـ boot النهائي للرفع
           cd /tmp/boot_unpack
           if [ -f "kernel" ]; then
             echo "Kernel found from unpacked boot image."
-            # إعادة تجميع الصورة بعد تطبيق التعديلات الافتراضية
             magiskboot repack boot.img
             cp new-boot.img $GITHUB_WORKSPACE/final_boot_kernelsu_susfs.img
           else
