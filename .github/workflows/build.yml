@@ -18,6 +18,10 @@ jobs:
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
           chmod a+rx ~/bin/repo
           echo "$HOME/bin" >> $GITHUB_PATH
+          
+          # ضبط إعدادات Git لتجنب مشاكل الصلاحيات
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
 
       - name: Download Kernel Source & Tools
         run: |
@@ -30,14 +34,11 @@ jobs:
         run: |
           cd kernel_workspace/common
           
-          curl -L https://github.com/rifs28/KernelSU-Next/archive/refs/heads/next.tar.gz -o ksunext.tar.gz
-          tar -xzf ksunext.tar.gz
-          mv KernelSU-Next-next KernelSU-Next
+          # استنساخ المجلدات بالطريقة الصحيحة والآمنة
+          git clone --depth=1 -b next https://github.com/rifs28/KernelSU-Next.git KernelSU-Next
+          git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
           
-          curl -L https://gitlab.com/simonpang/susfs4ksu/-/archive/gki-android14-6.1/susfs4ksu-gki-android14-6.1.tar.gz -o susfs.tar.gz
-          tar -xzf susfs.tar.gz
-          mv susfs4ksu-gki-android14-6.1 susfs4ksu
-          
+          # تطبيق الرقع والتعديلات
           cp susfs4ksu/kernel_patches/KernelSU/1001-ksu_susfs_other_hooks_for_ksu_next.patch KernelSU-Next/
           cp susfs4ksu/kernel_patches/fs/susfs.c fs/
           cp susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
