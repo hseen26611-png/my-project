@@ -21,7 +21,7 @@ jobs:
 
       - name: Download Kernel Source & Tools
         run: |
-          mkdir kernel_workspace
+          mkdir -p kernel_workspace
           cd kernel_workspace
           repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
           repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle
@@ -30,12 +30,12 @@ jobs:
         run: |
           cd kernel_workspace/common
           
-          # تحميل KernelSU-Next كملف مضغوط وتغيير اسمه مباشرة
-          wget -q https://github.com/rifs28/KernelSU-Next/archive/refs/heads/next.zip -O ksunext.zip
-          unzip -q ksunext.zip
+          # تحميل KernelSU-Next والتأكد من نجاح العملية
+          curl -LJ https://github.com/rifs28/KernelSU-Next/archive/refs/heads/next.zip -o ksunext.zip
+          unzip -o ksunext.zip
           mv KernelSU-Next-next KernelSU-Next
           
-          # تحميل SUSFS من جيت لب
+          # استخدام حزمة SUSFS عبر Git لأنها على GitLab ولا تواجه قيود مصادقة GitHub
           git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
           
           # تطبيق الرقع والتعديلات
