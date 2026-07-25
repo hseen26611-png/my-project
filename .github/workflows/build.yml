@@ -22,8 +22,11 @@ jobs:
           wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(cat /tmp/confirm.txt)&id=$FILE_ID" -O boot.img
           ls -lh boot.img
 
-      - name: Setup KernelSU-Next Source
+      - name: Setup KernelSU-Next & SUSFS
         run: |
           mkdir -p drivers/kernelsu
           git clone https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu --depth=1
-          echo "KernelSU-Next source cloned successfully into drivers/kernelsu."
+          
+          # جلب رقعة SUSFS وتطبيقها لضمان التخفي التام
+          git clone https://github.com/rifsxd/susfs4ksu.git /tmp/susfs --depth=1
+          echo "KernelSU-Next and SUSFS components prepared successfully."
