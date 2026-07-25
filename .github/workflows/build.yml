@@ -13,11 +13,10 @@ jobs:
       - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-time ccache curl flex gcc-aarch64-linux-gnu git libssl-dev libelf-dev wget zip
+          sudo apt-get install -y bc bison build-essential curl flex gcc-aarch64-linux-gnu git libssl-dev libelf-dev wget zip
 
       - name: Download Stock Boot Image
         run: |
-          # رابط ملف الـ boot.img الخاص بك على جوجل درايف
           FILE_ID="1ifhjz-qOkFBF1euZqCd6cAAbKpbdUQYY"
           wget --save-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&id=$FILE_ID" -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1/p' > /tmp/confirm.txt
           wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(cat /tmp/confirm.txt)&id=$FILE_ID" -O boot.img
@@ -26,4 +25,3 @@ jobs:
       - name: Clone Kernel Source & Setup KernelSU-Next
         run: |
           echo "Ready to process kernel source and integrate KSU-Next + SUSFS..."
-          # سنقوم بتضمين أوامر فك الـ boot.img ودمج التعديلات هنا
