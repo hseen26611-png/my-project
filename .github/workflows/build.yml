@@ -30,19 +30,14 @@ jobs:
         run: |
           cd kernel_workspace/common
           
-          # إزالة أي ارتباط سابق لـ git قد يسبب مشاكل في المجلدات الفرعية
-          rm -rf KernelSU-Next susfs4ksu
+          # إيقاف فحص الأمان لـ git وتجنب طلبات المصادقة نهائياً
+          git config --global advice.detachedHead false
           
-          # تحميل الملفات مباشرة عبر curl كأرشيف سورس نظيف تماماً لتجنب قيود المصادقة
-          curl -L https://github.com/rifs28/KernelSU-Next/archive/refs/heads/next.tar.gz -o ksunext.tar.gz
-          tar -xzf ksunext.tar.gz
-          mv KernelSU-Next-next KernelSU-Next
-          rm ksunext.tar.gz
+          # استنساخ KernelSU-Next مباشرة بدون مشاكل الأرشيف
+          git clone --depth=1 -b next https://github.com/rifs28/KernelSU-Next.git KernelSU-Next
           
-          curl -L https://gitlab.com/simonpang/susfs4ksu/-/archive/gki-android14-6.1/susfs4ksu-gki-android14-6.1.tar.gz -o susfs.tar.gz
-          tar -xzf susfs.tar.gz
-          mv susfs4ksu-gki-android14-6.1 susfs4ksu
-          rm susfs.tar.gz
+          # استنساخ SUSFS مباشرة عبر HTTPS بدون الحاجة لتسجيل دخول
+          git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
           
           # تطبيق الرقع والتعديلات البرمجية
           cp susfs4ksu/kernel_patches/KernelSU/1001-ksu_susfs_other_hooks_for_ksu_next.patch KernelSU-Next/
