@@ -1,61 +1,25 @@
-name: Build GKI Kernel with KernelSU-Next & SUSFS
+Name: CI
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-kernel:
+    name: Build Kernel GKI 6.1
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Build Environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential curl flex git coreutils gnupg libelf-dev libssl-dev lz4 liblz4-tool python3 python-is-python3 repo tar wget zip zstd
-          mkdir -p ~/bin
-          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
-          chmod a+rx ~/bin/repo
-          echo "$HOME/bin" >> $GITHUB_PATH
-
-      - name: Download Kernel Source & Tools
-        run: |
-          mkdir -p kernel_workspace
-          cd kernel_workspace
-          repo init -u https://android.googlesource.com/kernel/manifest -b common-android14-6.1 --depth=1
-          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle
-
-      - name: Integrate KernelSU-Next & SUSFS
-        run: |
-          cd kernel_workspace/common
-          
-          # إيقاف فحص الأمان لـ git وتجنب طلبات المصادقة نهائياً
-          git config --global advice.detachedHead false
-          
-          # استنساخ KernelSU-Next مباشرة بدون مشاكل الأرشيف
-          git clone --depth=1 -b next https://github.com/rifs28/KernelSU-Next.git KernelSU-Next
-          
-          # استنساخ SUSFS مباشرة عبر HTTPS بدون الحاجة لتسجيل دخول
-          git clone --depth=1 -b gki-android14-6.1 https://gitlab.com/simonpang/susfs4ksu.git susfs4ksu
-          
-          # تطبيق الرقع والتعديلات البرمجية
-          cp susfs4ksu/kernel_patches/KernelSU/1001-ksu_susfs_other_hooks_for_ksu_next.patch KernelSU-Next/
-          cp susfs4ksu/kernel_patches/fs/susfs.c fs/
-          cp susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/
-          
-          cd KernelSU-Next
-          git apply 1001-ksu_susfs_other_hooks_for_ksu_next.patch || true
-          cd ..
-          git apply susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
-
-      - name: Build Kernel Image
-        run: |
-          cd kernel_workspace
-          tools/bazel build --config=fast //common:kernel_aarch64_dist
-
-      - name: Upload Kernel Artifact
-        uses: actions/upload-artifact@v4
+      - name: Build
+        uses: dabao1955/kernel_build_action@main
         with:
-          name: GKI-Kernel-SUSFS-Pova7
-          path: kernel_workspace/out/android14-6.1/dist/Image
+          kernel-url: https://android.googlesource.com/kernel/common
+          kernel-branch: common-android14-6.1
+          config: gki_defconfig
+          arch: arm64
+          aosp-clang: true
+          android-version: 15
+          anykernel3: true
+          release: true
+          access-token: ${{ secrets.GITHUB_TOKEN }}
