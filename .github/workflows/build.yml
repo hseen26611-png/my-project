@@ -1,0 +1,55 @@
+name: Build GKI Kernel with KernelSU-Next & SUSFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl git ccache bison flex libssl-dev repo python3
+
+      - name: Download Kernel Source & Tools
+        run: |
+          mkdir kernel_workspace
+          cd kernel_workspace
+          repo init -u https://android.googlesource.com/kernel/manifest -b android14-6.1 --depth=1
+          repo sync -j$(nproc)
+
+      - name: Integrate KernelSU-Next & SUSFS
+        run: |
+          cd kernel_workspace/common
+          curl -LSs "https://raw.githubusercontent.com/rifs28/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-android14-6.1
+          cp susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ./KernelSU-Next/
+          cp susfs4ksu/kernel_patches/fs/* ./fs/
+          cp susfs4ksu/kernel_patches/include/linux/* ./include/linux/
+          
+          cd KernelSU-Next
+          patch -p1 < 10_enable_susfs_for_ksu.patch || true
+          cd ..
+          patch -p1 < susfs4ksu/kernel_patches/50_add_susfs_in_gki-android14-6.1.patch || true
+
+      - name: Build Kernel Image
+        run: |
+          cd kernel_workspace
+          LTO=thin ./build/build.sh
+
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GKI-Kernel-SUSFS-Pova7
+          path: kernel_workspace/out/android14-6.1/dist/Image
