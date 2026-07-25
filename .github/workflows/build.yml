@@ -20,7 +20,6 @@ jobs:
           arch: 'arm64'
           config: 'gki_defconfig'
           aosp-clang: 'true'
-          aosp-clang-version: 'r487747'
           aosp-gcc: 'true'
           other-gcc64-branch: 'master'
           other-gcc32-branch: 'master'
