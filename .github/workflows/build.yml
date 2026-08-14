@@ -1,83 +1,606 @@
-name: Official KernelSU-Next & SUSFS Build for TECNO POVA 7 5G
+name: BG7n KernelSU SUSFS Build
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  KERNEL_TAG: android12-5.10-2025-06_r3
+  KSU_TAG: v3.2.4
+  SUSFS_BRANCH: gki-android12-5.10
+  CLANG_URL: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/bd96dfe349c962681f0e5388af874c771ef96670/clang-r416183b.tar.gz
+
 jobs:
-  build_kernel:
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-24.04
+
     steps:
-      - name: Checkout Repository
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
+      # ============================================================
+      # 2. VERIFY PROJECT FILES
+      # ============================================================
+
+      - name: Verify BG7n files
+        shell: bash
         run: |
+          set -euxo pipefail
+
+          echo "===== Repository ====="
+          pwd
+          ls -lah
+
+          test -f STOCK-FINGERPRINT.txt
+
+          if [ -f "$GITHUB_WORKSPACE/bg7n_stock.config" ]; then
+            CONFIG_FILE="$GITHUB_WORKSPACE/bg7n_stock.config"
+
+          elif [ -f "$GITHUB_WORKSPACE/config/bg7n_stock.config" ]; then
+            CONFIG_FILE="$GITHUB_WORKSPACE/config/bg7n_stock.config"
+
+          else
+            echo "ERROR: bg7n_stock.config was not found."
+            echo "Files in repository:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort
+            exit 1
+          fi
+
+          echo "CONFIG_FILE=$CONFIG_FILE" >> "$GITHUB_ENV"
+
+          echo "===== Configuration ====="
+          echo "Using:"
+          echo "$CONFIG_FILE"
+
+          test -s "$CONFIG_FILE"
+
+          echo "Config size:"
+          wc -c "$CONFIG_FILE"
+
+          echo "Config first lines:"
+          head -20 "$CONFIG_FILE"
+
+      # ============================================================
+      # 3. FREE DISK SPACE
+      # ============================================================
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "===== Disk BEFORE cleanup ====="
+          df -h
+
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/lib/node_modules
+
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+          echo "===== Disk AFTER cleanup ====="
+          df -h
+
+      # ============================================================
+      # 4. BUILD DEPENDENCIES
+      # ============================================================
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex git libncurses5-dev libssl-dev python3 unzip zlib1g-dev libelf-dev libarchive-tools lz4 xz-utils gcc-aarch64-linux-gnu
 
-      - name: Setup Toolchain & Environment
+          sudo apt-get install -y \
+            bc \
+            bison \
+            flex \
+            build-essential \
+            libssl-dev \
+            libelf-dev \
+            libdw-dev \
+            python3 \
+            python3-pip \
+            rsync \
+            cpio \
+            lz4 \
+            xz-utils \
+            zip \
+            unzip \
+            git \
+            curl \
+            wget \
+            ca-certificates \
+            pahole
+
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+          echo "===== Disk after dependencies ====="
+          df -h
+
+      # ============================================================
+      # 5. CLONE EXACT GKI 5.10.237 SOURCE
+      # ============================================================
+
+      - name: Clone exact Android 5.10.237 kernel
+        shell: bash
         run: |
-          echo "Setting up environment for ARM64 kernel compilation..."
-          mkdir -p /tmp/toolchain
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git /tmp/toolchain/aarch64-linux-android-4.9 || true
+          set -euxo pipefail
 
-      - name: Clone Common Kernel Source (MediaTek ARM64)
+          git clone \
+            --depth=1 \
+            --single-branch \
+            --branch "$KERNEL_TAG" \
+            https://android.googlesource.com/kernel/common \
+            kernel
+
+          cd kernel
+
+          echo "===== Kernel commit ====="
+          git rev-parse HEAD
+
+          echo "===== Kernel version ====="
+          make kernelversion
+
+          echo "===== Git tag ====="
+          git describe --tags --always || true
+
+      # ============================================================
+      # 6. INSTALL ANDROID CLANG
+      #
+      # IMPORTANT:
+      # The archive extracts directly into:
+      #
+      # toolchain/bin/clang
+      #
+      # NOT:
+      #
+      # toolchain/clang-r416183b/bin/clang
+      #
+      # ============================================================
+
+      - name: Install Android Clang 12
+        shell: bash
         run: |
-          git clone --depth=1 https://github.com/Kernel-SU/Android-Kernel-Patch.git /tmp/kernel_source
-          cd /tmp/kernel_source
-          
-          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git drivers/kernelsu
-          git clone --depth=1 https://github.com/simonpunk/susfs4ksu.git /tmp/susfs
-          
-          if [ -d "/tmp/susfs/kernel_patches" ]; then
-            cp /tmp/susfs/kernel_patches/50_add_susfs_in_kthumbs.patch drivers/kernelsu/ || true
-            cp /tmp/susfs/kernel_patches/fs/* fs/ || true
-            cp /tmp/susfs/kernel_patches/include/linux/* include/linux/ || true
-            echo "SUSFS patches integrated successfully."
-          fi
+          set -euxo pipefail
 
-      - name: Compile Kernel and Generate Boot Image
+          mkdir -p "$GITHUB_WORKSPACE/toolchain"
+
+          echo "===== Disk BEFORE Clang ====="
+          df -h
+
+          echo "Downloading and extracting Clang..."
+
+          curl \
+            -L \
+            --fail \
+            --retry 3 \
+            --retry-delay 5 \
+            "$CLANG_URL" \
+            | tar -xz -C "$GITHUB_WORKSPACE/toolchain"
+
+          echo "===== Clang files ====="
+
+          test -x "$GITHUB_WORKSPACE/toolchain/bin/clang"
+
+          ls -lh "$GITHUB_WORKSPACE/toolchain/bin/clang"
+
+          echo "$GITHUB_WORKSPACE/toolchain/bin" >> "$GITHUB_PATH"
+
+          echo "===== Clang version ====="
+
+          "$GITHUB_WORKSPACE/toolchain/bin/clang" --version
+
+          echo "===== Disk AFTER Clang ====="
+          df -h
+
+      # ============================================================
+      # 7. INSTALL KERNELSU
+      # ============================================================
+
+      - name: Install KernelSU
+        working-directory: kernel
+        shell: bash
         run: |
-          cd /tmp/kernel_source
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=/tmp/toolchain/aarch64-linux-android-4.9/bin/aarch64-linux-android-
-          
-          make defconfig || true
-          make -j$(nproc) || echo "Build warning handled, checking output..."
+          set -euxo pipefail
 
-      - name: Package Output Boot Image
+          curl \
+            -LSs \
+            --fail \
+            "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" \
+            | bash -s "$KSU_TAG"
+
+          test -d KernelSU
+
+          echo "===== KernelSU ====="
+          ls -lah KernelSU
+
+      # ============================================================
+      # 8. CLONE SUSFS
+      # ============================================================
+
+      - name: Clone SUSFS
+        shell: bash
         run: |
-          mkdir -p $GITHUB_WORKSPACE/output
-          if [ -f "/tmp/kernel_source/arch/arm64/boot/Image" ]; then
-            cp /tmp/kernel_source/arch/arm64/boot/Image $GITHUB_WORKSPACE/output/kernel_kernelsu_susfs
-            echo "Kernel Image successfully compiled!"
-          else
-            echo "Fallback to advanced image patching mechanism..."
-          fi
-          
-          wget https://raw.githubusercontent.com/VR25/aidad/master/bin/magiskboot/x86_64/magiskboot -O /tmp/magiskboot
-          chmod +x /tmp/magiskboot
-          
-          FILE_ID="1ifhjz-qOkFBF1euZqCd6cAAbKpbdUQYY"
-          wget --save-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&id=$FILE_ID" -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1/p' > /tmp/confirm.txt
-          wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(cat /tmp/confirm.txt)&id=$FILE_ID" -O /tmp/boot.img
-          
-          cd /tmp
-          ./magiskboot unpack boot.img
-          if [ -f "$GITHUB_WORKSPACE/output/kernel_kernelsu_susfs" ]; then
-            cp $GITHUB_WORKSPACE/output/kernel_kernelsu_susfs kernel
-            ./magiskboot repack boot.img
-            cp new-boot.img $GITHUB_WORKSPACE/output/final_official_boot.img
-          else
-            cp boot.img $GITHUB_WORKSPACE/output/final_official_boot.img
-          fi
-          
-          cd $GITHUB_WORKSPACE/output
-          ls -lh
+          set -euxo pipefail
 
-      - name: Upload Official Build Artifact
+          git clone \
+            --depth=1 \
+            --single-branch \
+            --branch "$SUSFS_BRANCH" \
+            https://gitlab.com/simonpunk/susfs4ksu.git \
+            susfs
+
+          echo "===== SUSFS commit ====="
+
+          cd susfs
+          git rev-parse HEAD
+
+          cd ..
+
+          test -f \
+            susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
+
+          test -f \
+            susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+
+      # ============================================================
+      # 9. APPLY SUSFS
+      # ============================================================
+
+      - name: Apply SUSFS patches
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "===== Copy SUSFS files ====="
+
+          cp \
+            ../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch \
+            KernelSU/
+
+          cp \
+            ../susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch \
+            .
+
+          cp \
+            ../susfs/kernel_patches/fs/* \
+            fs/
+
+          cp \
+            ../susfs/kernel_patches/include/linux/* \
+            include/linux/
+
+          echo "===== Patch KernelSU ====="
+
+          cd KernelSU
+
+          patch \
+            -p1 \
+            < 10_enable_susfs_for_ksu.patch
+
+          cd ..
+
+          echo "===== Patch kernel ====="
+
+          patch \
+            -p1 \
+            < 50_add_susfs_in_gki-android12-5.10.patch
+
+          echo "===== SUSFS patch completed ====="
+
+      # ============================================================
+      # 10. INSTALL STOCK BG7n CONFIG
+      # ============================================================
+
+      - name: Install BG7n stock configuration
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "Using:"
+          echo "$CONFIG_FILE"
+
+          cp \
+            "$CONFIG_FILE" \
+            "$GITHUB_WORKSPACE/kernel/.config"
+
+          test -s "$GITHUB_WORKSPACE/kernel/.config"
+
+          echo "===== Config installed ====="
+
+          wc -l "$GITHUB_WORKSPACE/kernel/.config"
+
+      # ============================================================
+      # 11. CONFIGURE KERNELSU + SUSFS
+      # ============================================================
+
+      - name: Configure KernelSU and SUSFS
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          echo "===== Enable KernelSU ====="
+
+          ./scripts/config \
+            --enable CONFIG_KSU
+
+          ./scripts/config \
+            --enable CONFIG_KSU_SUSFS
+
+          echo "===== Enable SUSFS features ====="
+
+          for sym in \
+            CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_PATH \
+            CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT \
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT \
+            CONFIG_KSU_SUSFS_SUS_MAP \
+            CONFIG_KSU_SUSFS_AVC_LOG_SPOOFING
+          do
+            ./scripts/config --enable "$sym" 2>/dev/null || true
+          done
+
+          echo "===== Disable unused symbol trimming ====="
+
+          ./scripts/config \
+            --disable CONFIG_TRIM_UNUSED_KSYMS \
+            || true
+
+          echo "===== Disable automatic local version ====="
+
+          ./scripts/config \
+            --disable CONFIG_LOCALVERSION_AUTO \
+            || true
+
+          echo "===== Set stock kernel local version ====="
+
+          ./scripts/config \
+            --set-str CONFIG_LOCALVERSION \
+            "-android12-9-00013-gd09ef2e980e0-ab13968955"
+
+          echo "===== Run olddefconfig ====="
+
+          make \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            olddefconfig
+
+          echo "===== FINAL KSU/SUSFS CONFIG ====="
+
+          grep -E \
+            'CONFIG_(KSU|KSU_SUSFS|LOCALVERSION|TRIM_UNUSED_KSYMS)' \
+            .config \
+            || true
+
+      # ============================================================
+      # 12. VERIFY COMPILER
+      # ============================================================
+
+      - name: Verify compiler
+        shell: bash
+        env:
+          PATH: ${{ github.workspace }}/toolchain/bin:${{ env.PATH }}
+        run: |
+          set -euxo pipefail
+
+          echo "===== Compiler path ====="
+
+          which clang
+
+          echo "===== Compiler version ====="
+
+          clang --version
+
+          echo "===== LLVM tools ====="
+
+          which ld.lld || true
+          which llvm-ar || true
+          which llvm-nm || true
+
+      # ============================================================
+      # 13. VERIFY KERNEL CONFIG BEFORE BUILD
+      # ============================================================
+
+      - name: Verify kernel configuration
+        working-directory: kernel
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          test -f .config
+
+          echo "CONFIG_KSU:"
+          grep '^CONFIG_KSU=' .config || true
+
+          echo "CONFIG_KSU_SUSFS:"
+          grep '^CONFIG_KSU_SUSFS=' .config || true
+
+          echo "CONFIG_LOCALVERSION:"
+          grep '^CONFIG_LOCALVERSION=' .config || true
+
+          echo "Kernel version:"
+          make kernelversion
+
+      # ============================================================
+      # 14. BUILD KERNEL IMAGE
+      #
+      # First successful build only creates Image.
+      # We deliberately do NOT build modules/dtbs yet.
+      # ============================================================
+
+      - name: Build kernel Image
+        working-directory: kernel
+        shell: bash
+        env:
+          PATH: ${{ github.workspace }}/toolchain/bin:${{ env.PATH }}
+        run: |
+          set -euxo pipefail
+
+          echo "===== Disk BEFORE kernel build ====="
+          df -h
+
+          echo "===== Starting kernel build ====="
+
+          make \
+            -j"$(nproc)" \
+            O=out \
+            ARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            Image
+
+          echo "===== Build finished ====="
+
+          test -f \
+            out/arch/arm64/boot/Image
+
+          cp \
+            out/arch/arm64/boot/Image \
+            "$GITHUB_WORKSPACE/Image"
+
+          cp \
+            out/.config \
+            "$GITHUB_WORKSPACE/final.config"
+
+          echo "===== Disk AFTER kernel build ====="
+          df -h
+
+      # ============================================================
+      # 15. VERIFY IMAGE
+      # ============================================================
+
+      - name: Verify kernel Image
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          test -f Image
+          test -s Image
+
+          echo "===== Image information ====="
+
+          file Image
+          ls -lh Image
+
+          echo "===== SHA256 ====="
+
+          sha256sum Image
+
+          echo "===== Kernel strings ====="
+
+          strings Image \
+            | grep -m10 \
+            -E '5\.10\.237|android12-9|d09ef2e980e0' \
+            || true
+
+      # ============================================================
+      # 16. PACKAGE RESULT
+      # ============================================================
+
+      - name: Package kernel artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          rm -rf artifact
+          mkdir -p artifact
+
+          cp \
+            Image \
+            artifact/Image
+
+          cp \
+            final.config \
+            artifact/final.config
+
+          cp \
+            STOCK-FINGERPRINT.txt \
+            artifact/STOCK-FINGERPRINT.txt
+
+          cat > artifact/BUILD-INFO.txt <<'EOF'
+TECNO BG7n KernelSU + SUSFS
+
+Device:
+TECNO BG7n
+
+Device code:
+BG7n
+
+Platform:
+MediaTek MT6765
+
+Android:
+13
+
+Stock kernel:
+5.10.237-android12-9-00013-gd09ef2e980e0-ab13968955
+
+GKI source:
+android12-5.10-2025-06_r3
+
+GKI version:
+5.10.237
+
+KernelSU:
+v3.2.4
+
+SUSFS:
+gki-android12-5.10
+
+Build type:
+First kernel Image test
+
+IMPORTANT:
+This is NOT a flashable boot.img.
+
+Do NOT flash Image directly.
+
+The next stage must reconstruct a BG7n-compatible boot image
+using the original device boot/vendor_boot/DTB information.
+EOF
+
+          cd artifact
+
+          zip \
+            -9 \
+            "../BG7n-KernelSU-SUSFS-Image-test.zip" \
+            Image \
+            final.config \
+            STOCK-FINGERPRINT.txt \
+            BUILD-INFO.txt
+
+      # ============================================================
+      # 17. UPLOAD ARTIFACTS
+      # ============================================================
+
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Tecno-Pova-7-5G-Official-KernelSU-Next-SUSFS
-          path: output/final_official_boot.img
+          name: BG7n-KernelSU-SUSFS-Image-test
+          path: |
+            BG7n-KernelSU-SUSFS-Image-test.zip
+            Image
+            final.config
+            artifact/BUILD-INFO.txt
