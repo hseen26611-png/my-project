@@ -1,0 +1,9 @@
+TECNO BG7n Kernel fingerprint extracted from user-provided boot.zip
+Kernel: 5.10.237-android12-9-00013-gd09ef2e980e0-ab13968955
+Compiler: Android clang 12.0.5 / r416183b
+GKI release source target: android12-5.10-2025-06_r3
+GKI release commit suffix: d09ef2e980e0
+Architecture: arm64
+SoC: MediaTek MT6765
+Stock config SHA256: aac9c08f56e671d0ac778267960af3a259ff14b472d1b1c7088ee2da14981415
+Note: CONFIG_TRIM_UNUSED_KSYMS and CONFIG_LOCALVERSION_AUTO are disabled in the build copy to make the config reproducible outside Google's internal build path and keep the stock kernel release string stable.
