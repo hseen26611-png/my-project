@@ -18,65 +18,39 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ============================================================
-      # 2. VERIFY PROJECT FILES
-      # ============================================================
-
-      - name: Verify BG7n files
+      - name: Check BG7n files
         shell: bash
         run: |
           set -euxo pipefail
 
-          echo "===== Repository ====="
+          echo "===== REPOSITORY ====="
           pwd
           ls -lah
 
           test -f STOCK-FINGERPRINT.txt
 
-          if [ -f "$GITHUB_WORKSPACE/bg7n_stock.config" ]; then
-            CONFIG_FILE="$GITHUB_WORKSPACE/bg7n_stock.config"
-
-          elif [ -f "$GITHUB_WORKSPACE/config/bg7n_stock.config" ]; then
-            CONFIG_FILE="$GITHUB_WORKSPACE/config/bg7n_stock.config"
-
+          if [ -f bg7n_stock.config ]; then
+            echo "CONFIG_FILE=$GITHUB_WORKSPACE/bg7n_stock.config" >> "$GITHUB_ENV"
+          elif [ -f config/bg7n_stock.config ]; then
+            echo "CONFIG_FILE=$GITHUB_WORKSPACE/config/bg7n_stock.config" >> "$GITHUB_ENV"
           else
-            echo "ERROR: bg7n_stock.config was not found."
-            echo "Files in repository:"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort
+            echo "ERROR: bg7n_stock.config not found"
+            find . -maxdepth 3 -type f | sort
             exit 1
           fi
 
-          echo "CONFIG_FILE=$CONFIG_FILE" >> "$GITHUB_ENV"
+          echo "Using config:"
+          cat "$CONFIG_FILE" | head -20
 
-          echo "===== Configuration ====="
-          echo "Using:"
-          echo "$CONFIG_FILE"
-
-          test -s "$CONFIG_FILE"
-
-          echo "Config size:"
-          wc -c "$CONFIG_FILE"
-
-          echo "Config first lines:"
-          head -20 "$CONFIG_FILE"
-
-      # ============================================================
-      # 3. FREE DISK SPACE
-      # ============================================================
-
-      - name: Free runner disk space
+      - name: Aggressive disk cleanup
         shell: bash
         run: |
           set -euxo pipefail
 
-          echo "===== Disk BEFORE cleanup ====="
+          echo "===== DISK BEFORE ====="
           df -h
 
           sudo rm -rf /usr/local/lib/android
@@ -85,16 +59,16 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/powershell
           sudo rm -rf /usr/local/lib/node_modules
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /opt/hostedtoolcache
 
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
+          sudo rm -rf /tmp/*
+          sudo rm -rf /var/tmp/*
 
-          echo "===== Disk AFTER cleanup ====="
+          echo "===== DISK AFTER ====="
           df -h
-
-      # ============================================================
-      # 4. BUILD DEPENDENCIES
-      # ============================================================
 
       - name: Install build dependencies
         shell: bash
@@ -112,7 +86,6 @@ jobs:
             libelf-dev \
             libdw-dev \
             python3 \
-            python3-pip \
             rsync \
             cpio \
             lz4 \
@@ -128,14 +101,10 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
 
-          echo "===== Disk after dependencies ====="
+          echo "===== DISK AFTER DEPENDENCIES ====="
           df -h
 
-      # ============================================================
-      # 5. CLONE EXACT GKI 5.10.237 SOURCE
-      # ============================================================
-
-      - name: Clone exact Android 5.10.237 kernel
+      - name: Clone Android Common 5.10 kernel
         shell: bash
         run: |
           set -euxo pipefail
@@ -149,40 +118,21 @@ jobs:
 
           cd kernel
 
-          echo "===== Kernel commit ====="
+          echo "===== KERNEL COMMIT ====="
           git rev-parse HEAD
 
-          echo "===== Kernel version ====="
+          echo "===== KERNEL VERSION ====="
           make kernelversion
 
-          echo "===== Git tag ====="
-          git describe --tags --always || true
-
-      # ============================================================
-      # 6. INSTALL ANDROID CLANG
-      #
-      # IMPORTANT:
-      # The archive extracts directly into:
-      #
-      # toolchain/bin/clang
-      #
-      # NOT:
-      #
-      # toolchain/clang-r416183b/bin/clang
-      #
-      # ============================================================
-
-      - name: Install Android Clang 12
+      - name: Install Android Clang
         shell: bash
         run: |
           set -euxo pipefail
 
           mkdir -p "$GITHUB_WORKSPACE/toolchain"
 
-          echo "===== Disk BEFORE Clang ====="
+          echo "===== DISK BEFORE CLANG ====="
           df -h
-
-          echo "Downloading and extracting Clang..."
 
           curl \
             -L \
@@ -190,26 +140,29 @@ jobs:
             --retry 3 \
             --retry-delay 5 \
             "$CLANG_URL" \
-            | tar -xz -C "$GITHUB_WORKSPACE/toolchain"
+            -o /tmp/clang.tar.gz
 
-          echo "===== Clang files ====="
+          echo "===== CLANG ARCHIVE ====="
+          ls -lh /tmp/clang.tar.gz
 
-          test -x "$GITHUB_WORKSPACE/toolchain/bin/clang"
+          tar \
+            -xzf /tmp/clang.tar.gz \
+            -C "$GITHUB_WORKSPACE/toolchain"
 
-          ls -lh "$GITHUB_WORKSPACE/toolchain/bin/clang"
+          rm -f /tmp/clang.tar.gz
 
-          echo "$GITHUB_WORKSPACE/toolchain/bin" >> "$GITHUB_PATH"
+          test -x \
+            "$GITHUB_WORKSPACE/toolchain/clang-r416183b/bin/clang"
 
-          echo "===== Clang version ====="
+          echo \
+            "$GITHUB_WORKSPACE/toolchain/clang-r416183b/bin" \
+            >> "$GITHUB_PATH"
 
-          "$GITHUB_WORKSPACE/toolchain/bin/clang" --version
+          "$GITHUB_WORKSPACE/toolchain/clang-r416183b/bin/clang" \
+            --version
 
-          echo "===== Disk AFTER Clang ====="
+          echo "===== DISK AFTER CLANG ====="
           df -h
-
-      # ============================================================
-      # 7. INSTALL KERNELSU
-      # ============================================================
 
       - name: Install KernelSU
         working-directory: kernel
@@ -225,12 +178,7 @@ jobs:
 
           test -d KernelSU
 
-          echo "===== KernelSU ====="
-          ls -lah KernelSU
-
-      # ============================================================
-      # 8. CLONE SUSFS
-      # ============================================================
+          echo "KernelSU installed."
 
       - name: Clone SUSFS
         shell: bash
@@ -244,30 +192,19 @@ jobs:
             https://gitlab.com/simonpunk/susfs4ksu.git \
             susfs
 
-          echo "===== SUSFS commit ====="
-
-          cd susfs
-          git rev-parse HEAD
-
-          cd ..
-
           test -f \
             susfs/kernel_patches/50_add_susfs_in_gki-android12-5.10.patch
 
           test -f \
             susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
 
-      # ============================================================
-      # 9. APPLY SUSFS
-      # ============================================================
+          echo "SUSFS files verified."
 
-      - name: Apply SUSFS patches
+      - name: Apply SUSFS
         working-directory: kernel
         shell: bash
         run: |
           set -euxo pipefail
-
-          echo "===== Copy SUSFS files ====="
 
           cp \
             ../susfs/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch \
@@ -285,8 +222,6 @@ jobs:
             ../susfs/kernel_patches/include/linux/* \
             include/linux/
 
-          echo "===== Patch KernelSU ====="
-
           cd KernelSU
 
           patch \
@@ -295,55 +230,35 @@ jobs:
 
           cd ..
 
-          echo "===== Patch kernel ====="
-
           patch \
             -p1 \
             < 50_add_susfs_in_gki-android12-5.10.patch
 
-          echo "===== SUSFS patch completed ====="
+          echo "SUSFS patch completed."
 
-      # ============================================================
-      # 10. INSTALL STOCK BG7n CONFIG
-      # ============================================================
-
-      - name: Install BG7n stock configuration
+      - name: Install BG7n config
         shell: bash
         run: |
           set -euxo pipefail
-
-          echo "Using:"
-          echo "$CONFIG_FILE"
 
           cp \
             "$CONFIG_FILE" \
             "$GITHUB_WORKSPACE/kernel/.config"
 
-          test -s "$GITHUB_WORKSPACE/kernel/.config"
+          test -s \
+            "$GITHUB_WORKSPACE/kernel/.config"
 
-          echo "===== Config installed ====="
+          wc -c \
+            "$GITHUB_WORKSPACE/kernel/.config"
 
-          wc -l "$GITHUB_WORKSPACE/kernel/.config"
-
-      # ============================================================
-      # 11. CONFIGURE KERNELSU + SUSFS
-      # ============================================================
-
-      - name: Configure KernelSU and SUSFS
+      - name: Configure KernelSU SUSFS
         working-directory: kernel
         shell: bash
         run: |
           set -euxo pipefail
 
-          echo "===== Enable KernelSU ====="
-
-          ./scripts/config \
-            --enable CONFIG_KSU
-
-          ./scripts/config \
-            --enable CONFIG_KSU_SUSFS
-
-          echo "===== Enable SUSFS features ====="
+          ./scripts/config --enable CONFIG_KSU
+          ./scripts/config --enable CONFIG_KSU_SUSFS
 
           for sym in \
             CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT \
@@ -361,25 +276,12 @@ jobs:
             ./scripts/config --enable "$sym" 2>/dev/null || true
           done
 
-          echo "===== Disable unused symbol trimming ====="
-
-          ./scripts/config \
-            --disable CONFIG_TRIM_UNUSED_KSYMS \
-            || true
-
-          echo "===== Disable automatic local version ====="
-
-          ./scripts/config \
-            --disable CONFIG_LOCALVERSION_AUTO \
-            || true
-
-          echo "===== Set stock kernel local version ====="
+          ./scripts/config --disable CONFIG_TRIM_UNUSED_KSYMS || true
+          ./scripts/config --disable CONFIG_LOCALVERSION_AUTO || true
 
           ./scripts/config \
             --set-str CONFIG_LOCALVERSION \
             "-android12-9-00013-gd09ef2e980e0-ab13968955"
-
-          echo "===== Run olddefconfig ====="
 
           make \
             ARCH=arm64 \
@@ -387,93 +289,70 @@ jobs:
             LLVM_IAS=1 \
             olddefconfig
 
-          echo "===== FINAL KSU/SUSFS CONFIG ====="
+          echo "===== KSU/SUSFS CONFIG ====="
 
           grep -E \
             'CONFIG_(KSU|KSU_SUSFS|LOCALVERSION|TRIM_UNUSED_KSYMS)' \
-            .config \
-            || true
-
-      # ============================================================
-      # 12. VERIFY COMPILER
-      # ============================================================
+            .config || true
 
       - name: Verify compiler
         shell: bash
         env:
-          PATH: ${{ github.workspace }}/toolchain/bin:${{ env.PATH }}
+          PATH: ${{ github.workspace }}/toolchain/clang-r416183b/bin:${{ env.PATH }}
         run: |
           set -euxo pipefail
 
-          echo "===== Compiler path ====="
-
+          echo "===== CLANG ====="
           which clang
-
-          echo "===== Compiler version ====="
-
           clang --version
 
-          echo "===== LLVM tools ====="
+          echo "===== LLD ====="
+          which ld.lld
+          ld.lld --version
 
-          which ld.lld || true
-          which llvm-ar || true
-          which llvm-nm || true
-
-      # ============================================================
-      # 13. VERIFY KERNEL CONFIG BEFORE BUILD
-      # ============================================================
-
-      - name: Verify kernel configuration
-        working-directory: kernel
+      - name: Final disk check
         shell: bash
         run: |
           set -euxo pipefail
 
-          test -f .config
+          echo "===== DISK BEFORE BUILD ====="
+          df -h
 
-          echo "CONFIG_KSU:"
-          grep '^CONFIG_KSU=' .config || true
+          AVAILABLE=$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')
 
-          echo "CONFIG_KSU_SUSFS:"
-          grep '^CONFIG_KSU_SUSFS=' .config || true
+          echo "Available KB:"
+          echo "$AVAILABLE"
 
-          echo "CONFIG_LOCALVERSION:"
-          grep '^CONFIG_LOCALVERSION=' .config || true
-
-          echo "Kernel version:"
-          make kernelversion
-
-      # ============================================================
-      # 14. BUILD KERNEL IMAGE
-      #
-      # First successful build only creates Image.
-      # We deliberately do NOT build modules/dtbs yet.
-      # ============================================================
+          if [ "$AVAILABLE" -lt 4000000 ]; then
+            echo "ERROR: Less than 4 GB free before kernel build."
+            exit 1
+          fi
 
       - name: Build kernel Image
         working-directory: kernel
         shell: bash
         env:
-          PATH: ${{ github.workspace }}/toolchain/bin:${{ env.PATH }}
+          PATH: ${{ github.workspace }}/toolchain/clang-r416183b/bin:${{ env.PATH }}
         run: |
           set -euxo pipefail
 
-          echo "===== Disk BEFORE kernel build ====="
-          df -h
+          mkdir -p out
 
-          echo "===== Starting kernel build ====="
+          echo "===== BUILD START ====="
+          date
 
           make \
-            -j"$(nproc)" \
+            -j2 \
             O=out \
             ARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
             Image
 
-          echo "===== Build finished ====="
+          echo "===== BUILD FINISHED ====="
+          date
 
-          test -f \
+          test -s \
             out/arch/arm64/boot/Image
 
           cp \
@@ -484,84 +363,44 @@ jobs:
             out/.config \
             "$GITHUB_WORKSPACE/final.config"
 
-          echo "===== Disk AFTER kernel build ====="
-          df -h
-
-      # ============================================================
-      # 15. VERIFY IMAGE
-      # ============================================================
-
-      - name: Verify kernel Image
+      - name: Verify Image
         shell: bash
         run: |
           set -euxo pipefail
 
-          test -f Image
           test -s Image
-
-          echo "===== Image information ====="
+          test -s final.config
 
           file Image
           ls -lh Image
 
-          echo "===== SHA256 ====="
-
           sha256sum Image
-
-          echo "===== Kernel strings ====="
 
           strings Image \
             | grep -m10 \
             -E '5\.10\.237|android12-9|d09ef2e980e0' \
             || true
 
-      # ============================================================
-      # 16. PACKAGE RESULT
-      # ============================================================
-
-      - name: Package kernel artifact
+      - name: Create build information
         shell: bash
         run: |
           set -euxo pipefail
 
-          rm -rf artifact
           mkdir -p artifact
 
-          cp \
-            Image \
-            artifact/Image
-
-          cp \
-            final.config \
-            artifact/final.config
-
-          cp \
-            STOCK-FINGERPRINT.txt \
-            artifact/STOCK-FINGERPRINT.txt
+          cp Image artifact/
+          cp final.config artifact/
+          cp STOCK-FINGERPRINT.txt artifact/
 
           cat > artifact/BUILD-INFO.txt <<'EOF'
-TECNO BG7n KernelSU + SUSFS
-
-Device:
 TECNO BG7n
+KernelSU + SUSFS
 
-Device code:
-BG7n
-
-Platform:
-MediaTek MT6765
-
-Android:
-13
-
-Stock kernel:
-5.10.237-android12-9-00013-gd09ef2e980e0-ab13968955
-
-GKI source:
-android12-5.10-2025-06_r3
-
-GKI version:
+Kernel:
 5.10.237
+
+GKI:
+android12-5.10-2025-06_r3
 
 KernelSU:
 v3.2.4
@@ -569,33 +408,36 @@ v3.2.4
 SUSFS:
 gki-android12-5.10
 
-Build type:
-First kernel Image test
+Architecture:
+arm64
+
+Build:
+Image only
 
 IMPORTANT:
 This is NOT a flashable boot.img.
 
 Do NOT flash Image directly.
 
-The next stage must reconstruct a BG7n-compatible boot image
-using the original device boot/vendor_boot/DTB information.
+The stock boot/vendor_boot/DTB/DTBO layout must be
+verified before creating a flashable image.
 EOF
+
+      - name: Create ZIP
+        shell: bash
+        run: |
+          set -euxo pipefail
 
           cd artifact
 
-          zip \
-            -9 \
-            "../BG7n-KernelSU-SUSFS-Image-test.zip" \
+          zip -9 \
+            ../BG7n-KernelSU-SUSFS-Image-test.zip \
             Image \
             final.config \
             STOCK-FINGERPRINT.txt \
             BUILD-INFO.txt
 
-      # ============================================================
-      # 17. UPLOAD ARTIFACTS
-      # ============================================================
-
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: BG7n-KernelSU-SUSFS-Image-test
